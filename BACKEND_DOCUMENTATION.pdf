@@ -1,0 +1,1882 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 2575 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(BACKEND DOCUMENTATION) Tj
+0 -14 Td
+(=====================) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose) Tj
+0 -14 Td
+(-------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(This project's backend is the Python runtime that:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Captures frames from the camera.) Tj
+0 -14 Td
+(2. Runs object detection with YOLO.) Tj
+0 -14 Td
+(3. Optionally runs depth estimation with MiDaS.) Tj
+0 -14 Td
+(4. Estimates obstacle distance and urgency.) Tj
+0 -14 Td
+(5. Produces alerts, voice guidance, and assistant answers.) Tj
+0 -14 Td
+(6. Streams everything to the frontend through FastAPI + WebSocket.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(For backend work, the most important file is server.py - /C:/VISSION_ASSIST/server.py. The src/) Tj
+0 -14 Td
+(folder contains the domain modules that the server orchestrates.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Backend File Map) Tj
+0 -14 Td
+(----------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py - /C:/VISSION_ASSIST/server.py: FastAPI app, WebSocket API, pipeline lifecycle,) Tj
+0 -14 Td
+(  frame streaming.) Tj
+0 -14 Td
+(- src/detection.py - /C:/VISSION_ASSIST/src/detection.py: YOLO wrapper and Detection model.) Tj
+0 -14 Td
+(- src/navigation.py - /C:/VISSION_ASSIST/src/navigation.py: converts detections + depth into) Tj
+0 -14 Td
+(  user-facing advice.) Tj
+0 -14 Td
+(- src/ranging.py - /C:/VISSION_ASSIST/src/ranging.py: approximate monocular distance) Tj
+0 -14 Td
+(  estimation and smoothing.) Tj
+0 -14 Td
+(- src/depth.py - /C:/VISSION_ASSIST/src/depth.py: MiDaS depth model loading and cached) Tj
+0 -14 Td
+(  inference.) Tj
+0 -14 Td
+(- src/voice.py - /C:/VISSION_ASSIST/src/voice.py: thread-safe text-to-speech queue.) Tj
+0 -14 Td
+(- src/alerts.py - /C:/VISSION_ASSIST/src/alerts.py: alert repetition suppression.) Tj
+0 -14 Td
+(- src/assistant_llm.py - /C:/VISSION_ASSIST/src/assistant_llm.py: scene-to-prompt conversion) Tj
+0 -14 Td
+(  and Gemini HTTP call.) Tj
+0 -14 Td
+(- src/speech_input.py - /C:/VISSION_ASSIST/src/speech_input.py: Windows speech recognition) Tj
+0 -14 Td
+(  helper for the GUI.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Architecture) Tj
+0 -14 Td
+(------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Browser React UI) Tj
+0 -14 Td
+(    |) Tj
+0 -14 Td
+(    | WebSocket JSON messages) Tj
+0 -14 Td
+(    v) Tj
+0 -14 Td
+(FastAPI server \(server.py\)) Tj
+0 -14 Td
+(    |) Tj
+0 -14 Td
+(    | starts/stops) Tj
+0 -14 Td
+(    v) Tj
+0 -14 Td
+(Pipeline thread) Tj
+0 -14 Td
+(    |) Tj
+0 -14 Td
+(    +--> YOLO detector) Tj
+0 -14 Td
+(    +--> MiDaS depth estimator \(upgraded mode only\)) Tj
+0 -14 Td
+(    +--> Navigation engine) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 2024 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(    +--> Distance estimator + smoother) Tj
+0 -14 Td
+(    +--> Alert suppressor) Tj
+0 -14 Td
+(    +--> Voice engine) Tj
+0 -14 Td
+(    |) Tj
+0 -14 Td
+(    v) Tj
+0 -14 Td
+(Events pushed into asyncio queue) Tj
+0 -14 Td
+(    |) Tj
+0 -14 Td
+(    v) Tj
+0 -14 Td
+(WebSocket sender task) Tj
+0 -14 Td
+(    |) Tj
+0 -14 Td
+(    v) Tj
+0 -14 Td
+(Frontend updates video, detections, stats, alerts) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Runtime Lifecycle) Tj
+0 -14 Td
+(-----------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Server startup:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(When server.py - /C:/VISSION_ASSIST/server.py is run directly, it starts Uvicorn on port 8000 at) Tj
+0 -14 Td
+(server.py:426 - /C:/VISSION_ASSIST/server.py#L426.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(2. WebSocket connection:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(When the frontend connects to /ws, the backend accepts the socket, creates a fresh asyncio) Tj
+0 -14 Td
+(queue, and launches a sender coroutine that forwards pipeline events to the client at) Tj
+0 -14 Td
+(server.py:356 - /C:/VISSION_ASSIST/server.py#L356.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3. Pipeline start:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(When the client sends:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"start","mode":"basic","confidence":0.6,"alert_delay":1.5}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(the WebSocket handler calls pipeline.start\(config, loop\) at server.py:381 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/server.py#L381.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(4. Background processing loop:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The pipeline thread:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Loads voice.) Tj
+0 -14 Td
+(2. Loads YOLO.) Tj
+0 -14 Td
+(3. Optionally loads MiDaS.) Tj
+0 -14 Td
+(4. Optionally starts an ultrasonic sensor.) Tj
+0 -14 Td
+(5. Opens the camera.) Tj
+0 -14 Td
+(6. Loops over frames until stopped.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(This happens inside Pipeline._run\(\) starting at server.py:117 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/server.py#L117.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5. Event fan-out:) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Length 1682 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+() Tj
+0 -14 Td
+(Each loop iteration can emit:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- frame) Tj
+0 -14 Td
+(- detections) Tj
+0 -14 Td
+(- alert) Tj
+0 -14 Td
+(- stats) Tj
+0 -14 Td
+(- distance) Tj
+0 -14 Td
+(- error) Tj
+0 -14 Td
+(- status) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Events are added to the asyncio queue through _push\(\) at server.py:109 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/server.py#L109.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6. Stop / disconnect:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Stopping or disconnecting sets _running = False, stops voice, releases the camera, and emits) Tj
+0 -14 Td
+({"type":"status","running":false} at server.py:89 - /C:/VISSION_ASSIST/server.py#L89 and) Tj
+0 -14 Td
+(server.py:419 - /C:/VISSION_ASSIST/server.py#L419.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Data Contracts) Tj
+0 -14 Td
+(--------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Client to server:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Defined in the docstring at server.py:25 - /C:/VISSION_ASSIST/server.py#L25:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- start) Tj
+0 -14 Td
+(- stop) Tj
+0 -14 Td
+(- settings) Tj
+0 -14 Td
+(- depth_overlay) Tj
+0 -14 Td
+(- ask) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Server to client:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Defined in the docstring at server.py:14 - /C:/VISSION_ASSIST/server.py#L14:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- frame) Tj
+0 -14 Td
+(- detections) Tj
+0 -14 Td
+(- alert) Tj
+0 -14 Td
+(- stats) Tj
+0 -14 Td
+(- distance) Tj
+0 -14 Td
+(- assistant) Tj
+0 -14 Td
+(- error) Tj
+0 -14 Td
+(- status) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Detailed Walkthrough) Tj
+0 -14 Td
+(--------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. server.py) Tj
+0 -14 Td
+(------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(What this file does:) Tj
+0 -14 Td
+() Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Length 3514 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(This file is both:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. The API server.) Tj
+0 -14 Td
+(2. The application orchestrator.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(It does not implement the detection or navigation algorithms itself. Instead, it wires together) Tj
+0 -14 Td
+(the modules in src/.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Line-by-line explanation:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Header and imports) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:1 - /C:/VISSION_ASSIST/server.py#L1 starts a long module docstring that explains) Tj
+0 -14 Td
+(  the server role and message format.) Tj
+0 -14 Td
+(- server.py:14 - /C:/VISSION_ASSIST/server.py#L14 documents outbound messages.) Tj
+0 -14 Td
+(- server.py:25 - /C:/VISSION_ASSIST/server.py#L25 documents inbound messages.) Tj
+0 -14 Td
+(- server.py:42 - /C:/VISSION_ASSIST/server.py#L42 imports standard library modules for async) Tj
+0 -14 Td
+(  work, encoding, timing, and threading.) Tj
+0 -14 Td
+(- server.py:47 - /C:/VISSION_ASSIST/server.py#L47 builds the absolute src/ path.) Tj
+0 -14 Td
+(- server.py:48 - /C:/VISSION_ASSIST/server.py#L48 injects src/ into sys.path so local) Tj
+0 -14 Td
+(  modules like detection and navigation can be imported directly.) Tj
+0 -14 Td
+(- server.py:51 - /C:/VISSION_ASSIST/server.py#L51 imports OpenCV, NumPy, and Torch.) Tj
+0 -14 Td
+(- server.py:55 - /C:/VISSION_ASSIST/server.py#L55 imports FastAPI and WebSocket classes.) Tj
+0 -14 Td
+(- server.py:58 - /C:/VISSION_ASSIST/server.py#L58 imports Uvicorn for running the HTTP) Tj
+0 -14 Td
+(  server.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Pipeline class state) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:63 - /C:/VISSION_ASSIST/server.py#L63 defines Pipeline, the core runtime) Tj
+0 -14 Td
+(  controller.) Tj
+0 -14 Td
+(- server.py:67 - /C:/VISSION_ASSIST/server.py#L67 begins the constructor.) Tj
+0 -14 Td
+(- server.py:68 - /C:/VISSION_ASSIST/server.py#L68 stores the worker thread handle.) Tj
+0 -14 Td
+(- server.py:69 - /C:/VISSION_ASSIST/server.py#L69 tracks whether the loop should keep) Tj
+0 -14 Td
+(  running.) Tj
+0 -14 Td
+(- server.py:70 - /C:/VISSION_ASSIST/server.py#L70 stores runtime config sent by the client.) Tj
+0 -14 Td
+(- server.py:71 - /C:/VISSION_ASSIST/server.py#L71 tracks whether depth overlay should be) Tj
+0 -14 Td
+(  drawn in rendered frames.) Tj
+0 -14 Td
+(- server.py:72 - /C:/VISSION_ASSIST/server.py#L72 creates an asyncio queue used to move) Tj
+0 -14 Td
+(  events from the worker thread to the WebSocket task.) Tj
+0 -14 Td
+(- server.py:73 - /C:/VISSION_ASSIST/server.py#L73 stores the owning event loop reference.) Tj
+0 -14 Td
+(- server.py:74 - /C:/VISSION_ASSIST/server.py#L74 holds the TTS engine instance.) Tj
+0 -14 Td
+(- server.py:75 - /C:/VISSION_ASSIST/server.py#L75 tracks the last alert timestamp for) Tj
+0 -14 Td
+(  cooldown behavior.) Tj
+0 -14 Td
+(- server.py:76 - /C:/VISSION_ASSIST/server.py#L76 caches the most recent detections for LLM) Tj
+0 -14 Td
+(  questions.) Tj
+0 -14 Td
+(- server.py:77 - /C:/VISSION_ASSIST/server.py#L77 caches the last sonar distance.) Tj
+0 -14 Td
+(- server.py:78 - /C:/VISSION_ASSIST/server.py#L78 records whether depth has successfully) Tj
+0 -14 Td
+(  produced any map yet.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Pipeline control methods) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:80 - /C:/VISSION_ASSIST/server.py#L80 defines start\(\).) Tj
+0 -14 Td
+(- server.py:81 - /C:/VISSION_ASSIST/server.py#L81 prevents double-starting the pipeline.) Tj
+0 -14 Td
+(- server.py:83 - /C:/VISSION_ASSIST/server.py#L83 stores the new config.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Length 3789 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(- server.py:84 - /C:/VISSION_ASSIST/server.py#L84 stores the main asyncio loop so thread-) Tj
+0 -14 Td
+(  safe queue writes are possible.) Tj
+0 -14 Td
+(- server.py:85 - /C:/VISSION_ASSIST/server.py#L85 marks the pipeline as running.) Tj
+0 -14 Td
+(- server.py:86 - /C:/VISSION_ASSIST/server.py#L86 creates a daemon thread targeting _run.) Tj
+0 -14 Td
+(- server.py:87 - /C:/VISSION_ASSIST/server.py#L87 starts the thread.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:89 - /C:/VISSION_ASSIST/server.py#L89 defines stop\(\).) Tj
+0 -14 Td
+(- server.py:90 - /C:/VISSION_ASSIST/server.py#L90 tells the main loop to exit.) Tj
+0 -14 Td
+(- server.py:91 - /C:/VISSION_ASSIST/server.py#L91 clears cached detections.) Tj
+0 -14 Td
+(- server.py:92 - /C:/VISSION_ASSIST/server.py#L92 clears cached distance.) Tj
+0 -14 Td
+(- server.py:93 - /C:/VISSION_ASSIST/server.py#L93 resets depth state.) Tj
+0 -14 Td
+(- server.py:94 - /C:/VISSION_ASSIST/server.py#L94 checks whether voice exists.) Tj
+0 -14 Td
+(- server.py:95 - /C:/VISSION_ASSIST/server.py#L95 attempts to stop voice cleanly.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:98 - /C:/VISSION_ASSIST/server.py#L98 defines update_settings\(\).) Tj
+0 -14 Td
+(- server.py:99 - /C:/VISSION_ASSIST/server.py#L99 merges partial config from the client into) Tj
+0 -14 Td
+(  the current config.) Tj
+0 -14 Td
+(- server.py:101 - /C:/VISSION_ASSIST/server.py#L101 resets the cooldown so new settings) Tj
+0 -14 Td
+(  apply immediately.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:103 - /C:/VISSION_ASSIST/server.py#L103 toggles depth overlay rendering.) Tj
+0 -14 Td
+(- server.py:106 - /C:/VISSION_ASSIST/server.py#L106 explicitly resets the alert timer.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Queue bridge) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:110 - /C:/VISSION_ASSIST/server.py#L110 defines _push\(\).) Tj
+0 -14 Td
+(- server.py:111 - /C:/VISSION_ASSIST/server.py#L111 ensures the main event loop still) Tj
+0 -14 Td
+(  exists.) Tj
+0 -14 Td
+(- server.py:112 - /C:/VISSION_ASSIST/server.py#L112 uses) Tj
+0 -14 Td
+(  asyncio.run_coroutine_threadsafe\(...\) because the worker thread cannot await directly.) Tj
+0 -14 Td
+(- server.py:113 - /C:/VISSION_ASSIST/server.py#L113 schedules queue.put\(event\) on the main) Tj
+0 -14 Td
+(  loop.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Pipeline bootstrap inside _run\(\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:117 - /C:/VISSION_ASSIST/server.py#L117 begins the background pipeline.) Tj
+0 -14 Td
+(- server.py:118 - /C:/VISSION_ASSIST/server.py#L118 imports ObjectDetector lazily, so the) Tj
+0 -14 Td
+(  server can import faster before the pipeline starts.) Tj
+0 -14 Td
+(- server.py:119 - /C:/VISSION_ASSIST/server.py#L119 imports Navigator.) Tj
+0 -14 Td
+(- server.py:120 - /C:/VISSION_ASSIST/server.py#L120 imports voice engine and priority) Tj
+0 -14 Td
+(  constants.) Tj
+0 -14 Td
+(- server.py:121 - /C:/VISSION_ASSIST/server.py#L121 imports AlertSuppressor.) Tj
+0 -14 Td
+(- server.py:123 - /C:/VISSION_ASSIST/server.py#L123 chooses GPU if CUDA is available,) Tj
+0 -14 Td
+(  otherwise CPU.) Tj
+0 -14 Td
+(- server.py:124 - /C:/VISSION_ASSIST/server.py#L124 builds a frontend-friendly device label) Tj
+0 -14 Td
+(  string.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:127 - /C:/VISSION_ASSIST/server.py#L127 creates the voice engine.) Tj
+0 -14 Td
+(- server.py:128 - /C:/VISSION_ASSIST/server.py#L128 starts the voice worker thread.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:131 - /C:/VISSION_ASSIST/server.py#L131 reads the requested mode from config.) Tj
+0 -14 Td
+(- server.py:132 - /C:/VISSION_ASSIST/server.py#L132 maps mode to YOLO weights.) Tj
+0 -14 Td
+(- server.py:133 - /C:/VISSION_ASSIST/server.py#L133 resolves the model path.) Tj
+0 -14 Td
+(- server.py:135 - /C:/VISSION_ASSIST/server.py#L135 begins safe YOLO loading.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Length 3848 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(- server.py:136 - /C:/VISSION_ASSIST/server.py#L136 creates ObjectDetector.) Tj
+0 -14 Td
+(- server.py:137 - /C:/VISSION_ASSIST/server.py#L137 passes the current confidence threshold.) Tj
+0 -14 Td
+(- server.py:138 - /C:/VISSION_ASSIST/server.py#L138 forces detector device alignment with) Tj
+0 -14 Td
+(  the pipeline.) Tj
+0 -14 Td
+(- server.py:139 - /C:/VISSION_ASSIST/server.py#L139 catches model load failure.) Tj
+0 -14 Td
+(- server.py:140 - /C:/VISSION_ASSIST/server.py#L140 sends the error to the client.) Tj
+0 -14 Td
+(- server.py:141 - /C:/VISSION_ASSIST/server.py#L141 stops voice because the pipeline cannot) Tj
+0 -14 Td
+(  proceed.) Tj
+0 -14 Td
+(- server.py:142 - /C:/VISSION_ASSIST/server.py#L142 marks the pipeline as not running.) Tj
+0 -14 Td
+(- server.py:143 - /C:/VISSION_ASSIST/server.py#L143 exits the thread early.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:145 - /C:/VISSION_ASSIST/server.py#L145 creates the Navigator.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Optional depth and ultrasonic setup) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:148 - /C:/VISSION_ASSIST/server.py#L148 initializes depth_est to None.) Tj
+0 -14 Td
+(- server.py:150 - /C:/VISSION_ASSIST/server.py#L150 only enables MiDaS in upgraded mode.) Tj
+0 -14 Td
+(- server.py:152 - /C:/VISSION_ASSIST/server.py#L152 imports DepthEstimator lazily.) Tj
+0 -14 Td
+(- server.py:153 - /C:/VISSION_ASSIST/server.py#L153 creates the depth estimator with frame) Tj
+0 -14 Td
+(  skipping.) Tj
+0 -14 Td
+(- server.py:155 - /C:/VISSION_ASSIST/server.py#L155 catches MiDaS failure and reports it) Tj
+0 -14 Td
+(  without crashing the whole pipeline.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:159 - /C:/VISSION_ASSIST/server.py#L159 initializes the optional ultrasonic) Tj
+0 -14 Td
+(  sensor reference.) Tj
+0 -14 Td
+(- server.py:160 - /C:/VISSION_ASSIST/server.py#L160 only tries sonar when enabled and a port) Tj
+0 -14 Td
+(  exists.) Tj
+0 -14 Td
+(- server.py:162 - /C:/VISSION_ASSIST/server.py#L162 imports UltrasonicSensor.) Tj
+0 -14 Td
+(- server.py:163 - /C:/VISSION_ASSIST/server.py#L163 constructs the sensor.) Tj
+0 -14 Td
+(- server.py:167 - /C:/VISSION_ASSIST/server.py#L167 starts reading from the sensor.) Tj
+0 -14 Td
+(- server.py:168 - /C:/VISSION_ASSIST/server.py#L168 treats sonar startup as optional by) Tj
+0 -14 Td
+(  sending an error instead of aborting.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Camera and per-run state) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:172 - /C:/VISSION_ASSIST/server.py#L172 opens camera index 0.) Tj
+0 -14 Td
+(- server.py:173 - /C:/VISSION_ASSIST/server.py#L173 fixes width to 640.) Tj
+0 -14 Td
+(- server.py:174 - /C:/VISSION_ASSIST/server.py#L174 fixes height to 480.) Tj
+0 -14 Td
+(- server.py:175 - /C:/VISSION_ASSIST/server.py#L175 validates that the camera opened) Tj
+0 -14 Td
+(  successfully.) Tj
+0 -14 Td
+(- server.py:176 - /C:/VISSION_ASSIST/server.py#L176 notifies the frontend if camera access) Tj
+0 -14 Td
+(  fails.) Tj
+0 -14 Td
+(- server.py:177 - /C:/VISSION_ASSIST/server.py#L177 stops voice on failure.) Tj
+0 -14 Td
+(- server.py:181 - /C:/VISSION_ASSIST/server.py#L181 resets alert timing for a fresh session.) Tj
+0 -14 Td
+(- server.py:182 - /C:/VISSION_ASSIST/server.py#L182 creates the duplicate-alert guard.) Tj
+0 -14 Td
+(- server.py:183 - /C:/VISSION_ASSIST/server.py#L183 scales repeat suppression based on) Tj
+0 -14 Td
+(  alert_delay.) Tj
+0 -14 Td
+(- server.py:185 - /C:/VISSION_ASSIST/server.py#L185 announces that processing has started.) Tj
+0 -14 Td
+(- server.py:187 - /C:/VISSION_ASSIST/server.py#L187 creates an FPS rolling buffer.) Tj
+0 -14 Td
+(- server.py:188 - /C:/VISSION_ASSIST/server.py#L188 saves the previous timestamp for FPS) Tj
+0 -14 Td
+(  calculation.) Tj
+0 -14 Td
+(- server.py:190 - /C:/VISSION_ASSIST/server.py#L190 maps navigation urgencies to voice) Tj
+0 -14 Td
+(  priorities.) Tj
+0 -14 Td
+() Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Length 3861 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(#### Main frame loop) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:192 - /C:/VISSION_ASSIST/server.py#L192 starts the processing loop.) Tj
+0 -14 Td
+(- server.py:193 - /C:/VISSION_ASSIST/server.py#L193 reads a frame from the camera.) Tj
+0 -14 Td
+(- server.py:194 - /C:/VISSION_ASSIST/server.py#L194 handles temporary capture failures.) Tj
+0 -14 Td
+(- server.py:195 - /C:/VISSION_ASSIST/server.py#L195 sleeps briefly to avoid a hot spin loop.) Tj
+0 -14 Td
+(- server.py:198 - /C:/VISSION_ASSIST/server.py#L198 captures the current time.) Tj
+0 -14 Td
+(- server.py:199 - /C:/VISSION_ASSIST/server.py#L199 computes instantaneous FPS and stores it) Tj
+0 -14 Td
+(  in the rolling buffer.) Tj
+0 -14 Td
+(- server.py:200 - /C:/VISSION_ASSIST/server.py#L200 updates the previous timestamp.) Tj
+0 -14 Td
+(- server.py:202 - /C:/VISSION_ASSIST/server.py#L202 normalizes frame size before processing.) Tj
+0 -14 Td
+(- server.py:205 - /C:/VISSION_ASSIST/server.py#L205 updates depth or returns cached depth if) Tj
+0 -14 Td
+(  the frame is skipped.) Tj
+0 -14 Td
+(- server.py:206 - /C:/VISSION_ASSIST/server.py#L206 exposes whether depth has ever become) Tj
+0 -14 Td
+(  ready.) Tj
+0 -14 Td
+(- server.py:209 - /C:/VISSION_ASSIST/server.py#L209 applies live confidence changes to the) Tj
+0 -14 Td
+(  detector.) Tj
+0 -14 Td
+(- server.py:210 - /C:/VISSION_ASSIST/server.py#L210 runs YOLO detection.) Tj
+0 -14 Td
+(- server.py:211 - /C:/VISSION_ASSIST/server.py#L211 caches detections for AI assistant) Tj
+0 -14 Td
+(  queries.) Tj
+0 -14 Td
+(- server.py:214 - /C:/VISSION_ASSIST/server.py#L214 uses depth-aware analysis when depth) Tj
+0 -14 Td
+(  exists.) Tj
+0 -14 Td
+(- server.py:217 - /C:/VISSION_ASSIST/server.py#L217 falls back to area-based analysis when) Tj
+0 -14 Td
+(  depth is unavailable.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Sonar fusion logic) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:220 - /C:/VISSION_ASSIST/server.py#L220 reads the ultrasonic distance if a) Tj
+0 -14 Td
+(  sensor is active.) Tj
+0 -14 Td
+(- server.py:221 - /C:/VISSION_ASSIST/server.py#L221 caches it for the assistant.) Tj
+0 -14 Td
+(- server.py:223 - /C:/VISSION_ASSIST/server.py#L223 imports sonar thresholds.) Tj
+0 -14 Td
+(- server.py:224 - /C:/VISSION_ASSIST/server.py#L224 classifies the reading into danger,) Tj
+0 -14 Td
+(  warning, or safe.) Tj
+0 -14 Td
+(- server.py:227 - /C:/VISSION_ASSIST/server.py#L227 emits the distance event to the) Tj
+0 -14 Td
+(  frontend.) Tj
+0 -14 Td
+(- server.py:229 - /C:/VISSION_ASSIST/server.py#L229 produces a hard-stop alert when sonar) Tj
+0 -14 Td
+(  sees something very close and vision did not.) Tj
+0 -14 Td
+(- server.py:233 - /C:/VISSION_ASSIST/server.py#L233 enforces the alert cooldown.) Tj
+0 -14 Td
+(- server.py:234 - /C:/VISSION_ASSIST/server.py#L234 checks with AlertSuppressor before) Tj
+0 -14 Td
+(  repeating the alert.) Tj
+0 -14 Td
+(- server.py:237 - /C:/VISSION_ASSIST/server.py#L237 speaks the message at critical priority.) Tj
+0 -14 Td
+(- server.py:238 - /C:/VISSION_ASSIST/server.py#L238 sends the same alert to the frontend.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Navigation alert logic) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:242 - /C:/VISSION_ASSIST/server.py#L242 gets the current timestamp for alerting.) Tj
+0 -14 Td
+(- server.py:244 - /C:/VISSION_ASSIST/server.py#L244 requires actual advice from the) Tj
+0 -14 Td
+(  navigator.) Tj
+0 -14 Td
+(- server.py:245 - /C:/VISSION_ASSIST/server.py#L245 applies the configured cooldown.) Tj
+0 -14 Td
+(- server.py:246 - /C:/VISSION_ASSIST/server.py#L246 to server.py:251 -) Tj
+0 -14 Td
+(  /C:/VISSION_ASSIST/server.py#L251 decide whether the alert should be emitted.) Tj
+0 -14 Td
+(- server.py:253 - /C:/VISSION_ASSIST/server.py#L253 checks whether voice is enabled.) Tj
+0 -14 Td
+(- server.py:254 - /C:/VISSION_ASSIST/server.py#L254 speaks the message using mapped) Tj
+0 -14 Td
+(  priority.) Tj
+ET
+endstream
+endobj
+9 0 obj
+<< /Length 3850 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(- server.py:256 - /C:/VISSION_ASSIST/server.py#L256 emits the alert JSON to the frontend.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Frame encoding and telemetry) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:260 - /C:/VISSION_ASSIST/server.py#L260 renders overlays on top of the frame.) Tj
+0 -14 Td
+(- server.py:263 - /C:/VISSION_ASSIST/server.py#L263 JPEG-encodes the image.) Tj
+0 -14 Td
+(- server.py:264 - /C:/VISSION_ASSIST/server.py#L264 base64-encodes the bytes for JSON) Tj
+0 -14 Td
+(  transport.) Tj
+0 -14 Td
+(- server.py:265 - /C:/VISSION_ASSIST/server.py#L265 pushes the frame event.) Tj
+0 -14 Td
+(- server.py:268 - /C:/VISSION_ASSIST/server.py#L268 to server.py:280 -) Tj
+0 -14 Td
+(  /C:/VISSION_ASSIST/server.py#L280 serialize detection summaries for the UI.) Tj
+0 -14 Td
+(- server.py:283 - /C:/VISSION_ASSIST/server.py#L283 to server.py:288 -) Tj
+0 -14 Td
+(  /C:/VISSION_ASSIST/server.py#L288 emit stats.) Tj
+0 -14 Td
+(- server.py:290 - /C:/VISSION_ASSIST/server.py#L290 releases the camera.) Tj
+0 -14 Td
+(- server.py:291 - /C:/VISSION_ASSIST/server.py#L291 stops sonar.) Tj
+0 -14 Td
+(- server.py:292 - /C:/VISSION_ASSIST/server.py#L292 stops voice.) Tj
+0 -14 Td
+(- server.py:293 - /C:/VISSION_ASSIST/server.py#L293 sends a stopped status event.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### Rendering layer) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:295 - /C:/VISSION_ASSIST/server.py#L295 defines _render\(\), the final annotation) Tj
+0 -14 Td
+(  step before streaming.) Tj
+0 -14 Td
+(- server.py:299 - /C:/VISSION_ASSIST/server.py#L299 overlays the MiDaS heatmap.) Tj
+0 -14 Td
+(- server.py:304 - /C:/VISSION_ASSIST/server.py#L304 loops through detections to draw) Tj
+0 -14 Td
+(  bounding boxes.) Tj
+0 -14 Td
+(- server.py:310 - /C:/VISSION_ASSIST/server.py#L310 colors boxes by estimated distance when) Tj
+0 -14 Td
+(  centimeters are available.) Tj
+0 -14 Td
+(- server.py:315 - /C:/VISSION_ASSIST/server.py#L315 otherwise colors boxes by relative) Tj
+0 -14 Td
+(  depth.) Tj
+0 -14 Td
+(- server.py:330 - /C:/VISSION_ASSIST/server.py#L330 draws left/center/right guide lines.) Tj
+0 -14 Td
+(- server.py:333 - /C:/VISSION_ASSIST/server.py#L333 draws the sonar HUD when available.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### FastAPI and WebSocket API) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- server.py:344 - /C:/VISSION_ASSIST/server.py#L344 creates the FastAPI app.) Tj
+0 -14 Td
+(- server.py:345 - /C:/VISSION_ASSIST/server.py#L345 creates one global Pipeline.) Tj
+0 -14 Td
+(- server.py:349 - /C:/VISSION_ASSIST/server.py#L349 mounts the frontend as static files.) Tj
+0 -14 Td
+(- server.py:351 - /C:/VISSION_ASSIST/server.py#L351 defines the root route.) Tj
+0 -14 Td
+(- server.py:356 - /C:/VISSION_ASSIST/server.py#L356 defines the /ws WebSocket endpoint.) Tj
+0 -14 Td
+(- server.py:360 - /C:/VISSION_ASSIST/server.py#L360 resets the queue for the current client) Tj
+0 -14 Td
+(  session.) Tj
+0 -14 Td
+(- server.py:363 - /C:/VISSION_ASSIST/server.py#L363 creates a sender coroutine that forwards) Tj
+0 -14 Td
+(  pipeline events.) Tj
+0 -14 Td
+(- server.py:377 - /C:/VISSION_ASSIST/server.py#L377 receives incoming WebSocket JSON from) Tj
+0 -14 Td
+(  the frontend.) Tj
+0 -14 Td
+(- server.py:381 - /C:/VISSION_ASSIST/server.py#L381 handles start.) Tj
+0 -14 Td
+(- server.py:385 - /C:/VISSION_ASSIST/server.py#L385 handles stop.) Tj
+0 -14 Td
+(- server.py:388 - /C:/VISSION_ASSIST/server.py#L388 handles settings.) Tj
+0 -14 Td
+(- server.py:393 - /C:/VISSION_ASSIST/server.py#L393 handles depth_overlay.) Tj
+0 -14 Td
+(- server.py:396 - /C:/VISSION_ASSIST/server.py#L396 handles ask.) Tj
+0 -14 Td
+(- server.py:403 - /C:/VISSION_ASSIST/server.py#L403 runs the LLM request in a worker thread) Tj
+0 -14 Td
+(  so the event loop does not block.) Tj
+0 -14 Td
+(- server.py:411 - /C:/VISSION_ASSIST/server.py#L411 sends the assistant response back to the) Tj
+0 -14 Td
+(  client.) Tj
+ET
+endstream
+endobj
+10 0 obj
+<< /Length 2683 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(- server.py:422 - /C:/VISSION_ASSIST/server.py#L422 stops the pipeline during cleanup.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(End-to-End Data Flow) Tj
+0 -14 Td
+(--------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Flow 1: live vision stream:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. The browser connects to /ws and sends a start message.) Tj
+0 -14 Td
+(2. The backend stores the config and starts the background pipeline thread.) Tj
+0 -14 Td
+(3. The pipeline opens the camera and reads frames continuously.) Tj
+0 -14 Td
+(4. Each frame is resized to a standard 640x480.) Tj
+0 -14 Td
+(5. YOLO detects objects in the frame.) Tj
+0 -14 Td
+(6. If upgraded mode is enabled, MiDaS produces a relative depth map.) Tj
+0 -14 Td
+(7. The navigator combines detections, depth, and ranging to decide the most important) Tj
+0 -14 Td
+(   obstacle.) Tj
+0 -14 Td
+(8. Alerts are filtered by cooldown and duplicate suppression.) Tj
+0 -14 Td
+(9. The annotated frame is JPEG-encoded and base64-encoded.) Tj
+0 -14 Td
+(10. The detection list, stats, alerts, and frame are pushed into the asyncio queue.) Tj
+0 -14 Td
+(11. The WebSocket sender task forwards those events to the frontend.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Flow 2: assistant question:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. The frontend sends {"type":"ask","question":"..."} over the same WebSocket.) Tj
+0 -14 Td
+(2. The backend snapshots recent detections, last sonar distance, and depth readiness.) Tj
+0 -14 Td
+(3. assistant_llm.py converts that scene state into a safety-oriented prompt.) Tj
+0 -14 Td
+(4. Gemini is called over plain HTTP.) Tj
+0 -14 Td
+(5. The answer is sent back as {"type":"assistant","answer":"..."}.) Tj
+0 -14 Td
+(6. If voice is enabled, the same answer is spoken through VoiceEngine.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Flow 3: live settings update:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. The frontend sends {"type":"settings", ... }.) Tj
+0 -14 Td
+(2. The server merges those values into Pipeline._config.) Tj
+0 -14 Td
+(3. The detector immediately reads the latest confidence threshold on the next frame.) Tj
+0 -14 Td
+(4. Alert cooldown is reset so the user feels the new setting immediately.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(API Reference) Tj
+0 -14 Td
+(-------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(WebSocket endpoint:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Endpoint: ws://<host>:8000/ws) Tj
+0 -14 Td
+(- Transport: JSON text messages over WebSocket) Tj
+0 -14 Td
+(- Primary direction: bidirectional event stream) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Client -> server messages:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### start) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({) Tj
+0 -14 Td
+(  "type": "start",) Tj
+0 -14 Td
+(  "mode": "basic",) Tj
+0 -14 Td
+(  "confidence": 0.6,) Tj
+ET
+endstream
+endobj
+11 0 obj
+<< /Length 1660 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(  "alert_delay": 1.5,) Tj
+0 -14 Td
+(  "voice_enabled": true,) Tj
+0 -14 Td
+(  "ultrasonic_enabled": false,) Tj
+0 -14 Td
+(  "ultrasonic_port": "COM3",) Tj
+0 -14 Td
+(  "ultrasonic_baud": 9600) Tj
+0 -14 Td
+(}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: starts the vision pipeline with the given runtime configuration.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### stop) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"stop"}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: stops the live pipeline and releases resources.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### settings) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"settings","confidence":0.65,"alert_delay":1.2}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: updates config live without recreating the whole backend process.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### depth_overlay) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"depth_overlay","enabled":true}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: toggles rendering of the MiDaS heatmap on outgoing frames.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### ask) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"ask","question":"What is ahead?","api_key":"<gemini-key>"}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: asks the assistant for a scene-aware natural-language answer.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Server -> client messages:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### frame) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"frame","data":"<base64-jpeg>"}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: carries the latest annotated camera frame.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### detections) Tj
+0 -14 Td
+() Tj
+ET
+endstream
+endobj
+12 0 obj
+<< /Length 1724 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+() Tj
+0 -14 Td
+({) Tj
+0 -14 Td
+(  "type":"detections",) Tj
+0 -14 Td
+(  "data":[) Tj
+0 -14 Td
+(    {"name":"person","conf":0.92,"depth":0.78,"pos":"left","area":52200,"distance_cm":95.0}) Tj
+0 -14 Td
+(  ]) Tj
+0 -14 Td
+(}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: gives the frontend a compact summary of objects currently visible.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### alert) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"alert","message":"Warning! Person about 100 centimeters away on your left. Move) Tj
+0 -14 Td
+(right.","urgency":"critical"}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: communicates the primary safety message to the UI.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### stats) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"stats","fps":18.3,"device":"GPU) Tj
+0 -14 Td
+(\(CUDA\)","depth_ready":true,"mode":"upgraded","sensor_on":false}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: operational telemetry for the UI.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### distance) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"distance","cm":84.2,"zone":"warning"}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: sonar-specific measurement event.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### assistant) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"assistant","answer":"There is a person about one meter ahead on your left."}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: delivers the LLM answer to the frontend.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### status) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"status","running":true}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: indicates whether the pipeline is active.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(#### error) Tj
+ET
+endstream
+endobj
+13 0 obj
+<< /Length 3288 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+({"type":"error","message":"YOLO load failed: ..."}) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Purpose: surfaces runtime failures without necessarily crashing the whole server process.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Backend Modules) Tj
+0 -14 Td
+(---------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(2. detection.py) Tj
+0 -14 Td
+(---------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(detection.py wraps Ultralytics YOLO and converts raw model output into the project-friendly) Tj
+0 -14 Td
+(Detection dataclass. The dataclass in src/detection.py:18 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/src/detection.py#L18 stores class name, confidence, box coordinates, and) Tj
+0 -14 Td
+(computed fields like center_x, center_y, and area. The detector class in src/detection.py:48 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/src/detection.py#L48 lazily imports heavy ML dependencies so the server can) Tj
+0 -14 Td
+(import faster and avoid loading YOLO before the user actually starts the pipeline. detect\(\) at) Tj
+0 -14 Td
+(src/detection.py:82 - /C:/VISSION_ASSIST/src/detection.py#L82 runs the model, filters by) Tj
+0 -14 Td
+(confidence, and returns normalized Detection objects.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3. navigation.py) Tj
+0 -14 Td
+(----------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(navigation.py is the decision layer. It decides which object matters most, where it is, how) Tj
+0 -14 Td
+(urgent it is, and what message should be spoken. In upgraded mode, analyse\(\) at) Tj
+0 -14 Td
+(src/navigation.py:79 - /C:/VISSION_ASSIST/src/navigation.py#L79 reads both detections and MiDaS) Tj
+0 -14 Td
+(depth. It computes adaptive percentiles from the scene, samples depth around each object's) Tj
+0 -14 Td
+(center, estimates distance if possible, and then produces one NavigationAdvice. In basic mode,) Tj
+0 -14 Td
+(analyse_by_area\(\) at src/navigation.py:147 - /C:/VISSION_ASSIST/src/navigation.py#L147 falls) Tj
+0 -14 Td
+(back to area and class priors. This module is the heart of the obstacle-prioritization logic.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(4. ranging.py) Tj
+0 -14 Td
+(-------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(ranging.py turns object size into approximate centimeters. DistanceEstimator at) Tj
+0 -14 Td
+(src/ranging.py:57 - /C:/VISSION_ASSIST/src/ranging.py#L57 uses assumed object dimensions plus) Tj
+0 -14 Td
+(camera field of view to estimate distance from bounding-box width or height. This is not true) Tj
+0 -14 Td
+(metric depth, but it is good enough to sort urgency. DistanceSmoother at src/ranging.py:148 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/src/ranging.py#L148 dampens frame-to-frame jumps so voice alerts do not) Tj
+0 -14 Td
+(oscillate.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5. depth.py) Tj
+0 -14 Td
+(-----------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(depth.py wraps MiDaS for monocular relative depth estimation. DepthEstimator at src/depth.py:30) Tj
+0 -14 Td
+(- /C:/VISSION_ASSIST/src/depth.py#L30 chooses CPU or GPU, loads a fallback chain of models, and) Tj
+0 -14 Td
+(computes depth only every frame_skip frames. The output is normalized disparity, so higher) Tj
+0 -14 Td
+(values mean closer objects. This is why the heatmap and navigation logic interpret bright/hot) Tj
+0 -14 Td
+(regions as near obstacles.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6. voice.py) Tj
+0 -14 Td
+(-----------) Tj
+ET
+endstream
+endobj
+14 0 obj
+<< /Length 2714 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+() Tj
+0 -14 Td
+(voice.py protects the system from speech overload. VoiceEngine at src/voice.py:43 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/src/voice.py#L43 keeps a bounded priority queue, deduplicates repeated) Tj
+0 -14 Td
+(speech, and lets critical messages preempt lower-priority ones. This is essential because the) Tj
+0 -14 Td
+(backend can generate alerts faster than a TTS engine can speak them.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7. alerts.py) Tj
+0 -14 Td
+(------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(alerts.py decides whether an alert is worth repeating. AlertSuppressor at src/alerts.py:18 -) Tj
+0 -14 Td
+(/C:/VISSION_ASSIST/src/alerts.py#L18 compares the new alert with the previous one, watches) Tj
+0 -14 Td
+(urgency changes, checks how much the distance changed, and blocks noisy repeats for a minimum) Tj
+0 -14 Td
+(interval.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8. assistant_llm.py) Tj
+0 -14 Td
+(-------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(assistant_llm.py integrates the assistant. It builds a prompt from scene state, recent) Tj
+0 -14 Td
+(detections, and sonar distance, then calls Gemini through plain HTTP. It does not require a) Tj
+0 -14 Td
+(heavyweight SDK, which keeps the backend easier to understand and deploy.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9. speech_input.py) Tj
+0 -14 Td
+(------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(speech_input.py is a desktop helper for capturing spoken user questions through Windows) Tj
+0 -14 Td
+(PowerShell and System.Speech. It is not part of the WebSocket pipeline, but it supports the) Tj
+0 -14 Td
+(overall backend capability for voice interaction.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Backend Tech Stack And Why It Is Used) Tj
+0 -14 Td
+(-------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(FastAPI:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used in server.py - /C:/VISSION_ASSIST/server.py for the HTTP server and WebSocket endpoint. It) Tj
+0 -14 Td
+(is a strong fit because:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- it gives async networking support out of the box,) Tj
+0 -14 Td
+(- WebSocket support is simple,) Tj
+0 -14 Td
+(- the code stays compact,) Tj
+0 -14 Td
+(- it is easy to serve both API and static frontend content from one process.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Uvicorn:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used to run the ASGI app. It is lightweight, fast, and the default operational partner for) Tj
+0 -14 Td
+(FastAPI.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(WebSocket:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used instead of plain REST polling because the frontend needs a continuous stream of frames,) Tj
+0 -14 Td
+(detections, stats, and alerts. This backend is event-driven, so WebSocket is the natural) Tj
+0 -14 Td
+(transport.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(OpenCV:) Tj
+0 -14 Td
+() Tj
+ET
+endstream
+endobj
+15 0 obj
+<< /Length 2652 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(Used for camera capture, frame resizing, drawing overlays, JPEG encoding, and color-map) Tj
+0 -14 Td
+(visualization. It is the practical computer-vision utility layer around the ML models.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(PyTorch:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used because both YOLO and MiDaS depend on Torch in this project. It also provides device) Tj
+0 -14 Td
+(management for CPU/GPU and tensor operations for inference.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Ultralytics YOLO:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used for object detection because it gives fast pretrained detection with minimal wrapper code.) Tj
+0 -14 Td
+(The backend needs class labels and bounding boxes in real time, and YOLO is doing that job here.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(MiDaS:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used for relative depth estimation from a single camera. Without MiDaS, the backend knows only) Tj
+0 -14 Td
+(what object is present, not which visible object is closest in the scene. MiDaS improves) Tj
+0 -14 Td
+(prioritization.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(pyttsx3:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used for offline text-to-speech. That matters here because safety guidance should still work) Tj
+0 -14 Td
+(locally even without internet access.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Gemini HTTP API:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used for scene-aware assistant answers. The project uses plain HTTP instead of a large SDK so) Tj
+0 -14 Td
+(the integration stays readable and dependency-light.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(PowerShell System.Speech:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Used on Windows for speech-to-text capture without requiring a separate cloud STT provider.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Concurrency Model) Tj
+0 -14 Td
+(-----------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The backend uses three concurrency layers:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. FastAPI's asyncio event loop for network traffic.) Tj
+0 -14 Td
+(2. One background thread for the vision pipeline.) Tj
+0 -14 Td
+(3. Additional short-lived threads for voice output and blocking assistant work.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(This design was likely chosen because the camera and ML pipeline are long-running and blocking,) Tj
+0 -14 Td
+(while the WebSocket server must stay responsive. The background thread isolates the vision loop) Tj
+0 -14 Td
+(from the async server.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(State Management) Tj
+0 -14 Td
+(----------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Important runtime state lives in Pipeline:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- _running: whether the loop should continue.) Tj
+0 -14 Td
+(- _config: live runtime configuration from the client.) Tj
+0 -14 Td
+(- _last_alert: cooldown marker.) Tj
+ET
+endstream
+endobj
+16 0 obj
+<< /Length 2662 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(- _last_detections: cached for assistant context.) Tj
+0 -14 Td
+(- _last_distance_cm: cached sonar value.) Tj
+0 -14 Td
+(- _depth_ready: whether MiDaS has successfully produced at least one map.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The backend is stateful. It is not a stateless request-per-response API server.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Operational Notes) Tj
+0 -14 Td
+(-----------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Startup cost:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Model loading happens when the pipeline starts, not at process boot. This keeps initial import) Tj
+0 -14 Td
+(lighter, but it makes the first start slower.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Single-client orientation:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The current design creates one global Pipeline and swaps its queue per WebSocket session. That) Tj
+0 -14 Td
+(means this backend is best understood as a single-user live runtime, not a multi-tenant backend) Tj
+0 -14 Td
+(service.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Failure behavior:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The backend often degrades gracefully:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- if MiDaS fails, it can continue without depth,) Tj
+0 -14 Td
+(- if the ultrasonic sensor fails, vision can still run,) Tj
+0 -14 Td
+(- if the assistant fails, the main detection loop still works.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Risks And Gaps) Tj
+0 -14 Td
+(--------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Missing ultrasonic module:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(server.py:162 - /C:/VISSION_ASSIST/server.py#L162 imports ultrasonic, but there is no matching) Tj
+0 -14 Td
+(file in the current workspace snapshot. That makes ultrasonic support incomplete here.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Case-sensitive deployment risk:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(server.py:348 - /C:/VISSION_ASSIST/server.py#L348 points to frontend, while the folder in this) Tj
+0 -14 Td
+(workspace is FRONTEND. Windows usually tolerates that, Linux usually does not.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Heavy runtime responsibilities in one file:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(server.py currently owns transport, pipeline orchestration, rendering, and session state. It) Tj
+0 -14 Td
+(works, but for a larger production backend you would usually split transport, service) Tj
+0 -14 Td
+(orchestration, and rendering into separate modules.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Suggested Reading Order) Tj
+0 -14 Td
+(-----------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. server.py - /C:/VISSION_ASSIST/server.py) Tj
+0 -14 Td
+(2. src/detection.py - /C:/VISSION_ASSIST/src/detection.py) Tj
+0 -14 Td
+(3. src/navigation.py - /C:/VISSION_ASSIST/src/navigation.py) Tj
+0 -14 Td
+(4. src/ranging.py - /C:/VISSION_ASSIST/src/ranging.py) Tj
+ET
+endstream
+endobj
+17 0 obj
+<< /Length 1110 >>
+stream
+BT
+/F1 10 Tf
+42 800 Td
+(5. src/depth.py - /C:/VISSION_ASSIST/src/depth.py) Tj
+0 -14 Td
+(6. src/voice.py - /C:/VISSION_ASSIST/src/voice.py) Tj
+0 -14 Td
+(7. src/alerts.py - /C:/VISSION_ASSIST/src/alerts.py) Tj
+0 -14 Td
+(8. src/assistant_llm.py - /C:/VISSION_ASSIST/src/assistant_llm.py) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Final Summary) Tj
+0 -14 Td
+(-------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(This backend is a real-time, stateful, event-driven Python system. FastAPI and WebSocket provide) Tj
+0 -14 Td
+(the transport. A background pipeline thread handles camera frames and model inference. YOLO) Tj
+0 -14 Td
+(detects objects, MiDaS estimates relative closeness, ranging approximates centimeters,) Tj
+0 -14 Td
+(navigation decides what matters, alerts prevents repetition, voice speaks the result, and the) Tj
+0 -14 Td
+(assistant explains the scene in natural language. The design is practical for a live assistive-) Tj
+0 -14 Td
+(vision application because it prioritizes responsiveness, local inference, graceful fallback,) Tj
+0 -14 Td
+(and continuous streaming over purely stateless API patterns.) Tj
+0 -14 Td
+() Tj
+ET
+endstream
+endobj
+18 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+19 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+20 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+21 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 5 0 R >>
+endobj
+22 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 6 0 R >>
+endobj
+23 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 7 0 R >>
+endobj
+24 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 8 0 R >>
+endobj
+25 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 9 0 R >>
+endobj
+26 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 10 0 R >>
+endobj
+27 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 11 0 R >>
+endobj
+28 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 12 0 R >>
+endobj
+29 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 13 0 R >>
+endobj
+30 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 14 0 R >>
+endobj
+31 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 15 0 R >>
+endobj
+32 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 16 0 R >>
+endobj
+33 0 obj
+<< /Type /Page /Parent 34 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 17 0 R >>
+endobj
+34 0 obj
+<< /Type /Pages /Kids [18 0 R 19 0 R 20 0 R 21 0 R 22 0 R 23 0 R 24 0 R 25 0 R 26 0 R 27 0 R 28 0 R 29 0 R 30 0 R 31 0 R 32 0 R 33 0 R] /Count 16 >>
+endobj
+35 0 obj
+<< /Type /Catalog /Pages 34 0 R >>
+endobj
+xref
+0 36
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000002712 00000 n 
+0000004788 00000 n 
+0000006522 00000 n 
+0000010088 00000 n 
+0000013929 00000 n 
+0000017829 00000 n 
+0000021742 00000 n 
+0000025644 00000 n 
+0000028380 00000 n 
+0000030093 00000 n 
+0000031870 00000 n 
+0000035211 00000 n 
+0000037978 00000 n 
+0000040683 00000 n 
+0000043398 00000 n 
+0000044561 00000 n 
+0000044689 00000 n 
+0000044817 00000 n 
+0000044945 00000 n 
+0000045073 00000 n 
+0000045201 00000 n 
+0000045329 00000 n 
+0000045457 00000 n 
+0000045585 00000 n 
+0000045714 00000 n 
+0000045843 00000 n 
+0000045972 00000 n 
+0000046101 00000 n 
+0000046230 00000 n 
+0000046359 00000 n 
+0000046488 00000 n 
+0000046617 00000 n 
+0000046782 00000 n 
+trailer
+<< /Size 36 /Root 35 0 R >>
+startxref
+46833
+%%EOF

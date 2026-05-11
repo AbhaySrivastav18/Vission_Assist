@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Backend Documentation</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #16202a; line-height: 1.45; font-size: 12px; }
+  h1, h2, h3, h4 { color: #0f3d57; margin: 18px 0 8px; page-break-after: avoid; }
+  h1 { font-size: 24px; border-bottom: 2px solid #0f3d57; padding-bottom: 6px; }
+  h2 { font-size: 18px; border-bottom: 1px solid #c8d6df; padding-bottom: 4px; }
+  h3 { font-size: 14px; }
+  p { margin: 8px 0; text-align: justify; }
+  ul, ol { margin: 8px 0 8px 22px; }
+  li { margin: 4px 0; }
+  code { background: #eef3f7; padding: 1px 4px; border-radius: 4px; font-family: Consolas, monospace; font-size: 11px; }
+  pre { background: #0f1720; color: #ecf2f8; padding: 10px; border-radius: 8px; overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  a { color: #0b5cab; text-decoration: none; }
+  .cover { margin-bottom: 22px; padding: 14px 16px; background: linear-gradient(135deg, #edf6fb, #ffffff); border: 1px solid #cfdbe4; border-radius: 10px; }
+  .meta { color: #4d6271; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <h1>Backend Documentation</h1>
+  <p>AI Vision Assist backend architecture, data flow, APIs, technology choices, and runtime behavior.</p>
+  <p class="meta">Generated from the repository at C:\VISSION_ASSIST on 2026-04-17.</p>
+</div>
+<h1>Backend Documentation</h1>
+<h2>Purpose</h2>
+<p>This project&#x27;s backend is the Python runtime that:</p>
+<ol>
+<li>Captures frames from the camera.</li>
+<li>Runs object detection with YOLO.</li>
+<li>Optionally runs depth estimation with MiDaS.</li>
+<li>Estimates obstacle distance and urgency.</li>
+<li>Produces alerts, voice guidance, and assistant answers.</li>
+<li>Streams everything to the frontend through FastAPI + WebSocket.</li>
+</ol>
+<p>For backend work, the most important file is <a href="/C:/VISSION_ASSIST/server.py">server.py</a>. The <code>src/</code> folder contains the domain modules that the server orchestrates.</p>
+<h2>Backend File Map</h2>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py">server.py</a>: FastAPI app, WebSocket API, pipeline lifecycle, frame streaming.</li>
+<li><a href="/C:/VISSION_ASSIST/src/detection.py">src/detection.py</a>: YOLO wrapper and <code>Detection</code> model.</li>
+<li><a href="/C:/VISSION_ASSIST/src/navigation.py">src/navigation.py</a>: converts detections + depth into user-facing advice.</li>
+<li><a href="/C:/VISSION_ASSIST/src/ranging.py">src/ranging.py</a>: approximate monocular distance estimation and smoothing.</li>
+<li><a href="/C:/VISSION_ASSIST/src/depth.py">src/depth.py</a>: MiDaS depth model loading and cached inference.</li>
+<li><a href="/C:/VISSION_ASSIST/src/voice.py">src/voice.py</a>: thread-safe text-to-speech queue.</li>
+<li><a href="/C:/VISSION_ASSIST/src/alerts.py">src/alerts.py</a>: alert repetition suppression.</li>
+<li><a href="/C:/VISSION_ASSIST/src/assistant_llm.py">src/assistant_llm.py</a>: scene-to-prompt conversion and Gemini HTTP call.</li>
+<li><a href="/C:/VISSION_ASSIST/src/speech_input.py">src/speech_input.py</a>: Windows speech recognition helper for the GUI.</li>
+</ul>
+<h2>Architecture</h2>
+<pre><code class="language-text">
+Browser React UI
+    |
+    | WebSocket JSON messages
+    v
+FastAPI server (server.py)
+    |
+    | starts/stops
+    v
+Pipeline thread
+    |
+    +--&gt; YOLO detector
+    +--&gt; MiDaS depth estimator (upgraded mode only)
+    +--&gt; Navigation engine
+    +--&gt; Distance estimator + smoother
+    +--&gt; Alert suppressor
+    +--&gt; Voice engine
+    |
+    v
+Events pushed into asyncio queue
+    |
+    v
+WebSocket sender task
+    |
+    v
+Frontend updates video, detections, stats, alerts
+</code></pre>
+<h2>Runtime Lifecycle</h2>
+<h3>1. Server startup</h3>
+<p>When <a href="/C:/VISSION_ASSIST/server.py">server.py</a> is run directly, it starts Uvicorn on port <code>8000</code> at <a href="/C:/VISSION_ASSIST/server.py#L426">server.py:426</a>.</p>
+<h3>2. WebSocket connection</h3>
+<p>When the frontend connects to <code>/ws</code>, the backend accepts the socket, creates a fresh asyncio queue, and launches a sender coroutine that forwards pipeline events to the client at <a href="/C:/VISSION_ASSIST/server.py#L356">server.py:356</a>.</p>
+<h3>3. Pipeline start</h3>
+<p>When the client sends:</p>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;start&quot;,&quot;mode&quot;:&quot;basic&quot;,&quot;confidence&quot;:0.6,&quot;alert_delay&quot;:1.5}
+</code></pre>
+<p>the WebSocket handler calls <code>pipeline.start(config, loop)</code> at <a href="/C:/VISSION_ASSIST/server.py#L381">server.py:381</a>.</p>
+<h3>4. Background processing loop</h3>
+<p>The pipeline thread:</p>
+<ol>
+<li>Loads voice.</li>
+<li>Loads YOLO.</li>
+<li>Optionally loads MiDaS.</li>
+<li>Optionally starts an ultrasonic sensor.</li>
+<li>Opens the camera.</li>
+<li>Loops over frames until stopped.</li>
+</ol>
+<p>This happens inside <code>Pipeline._run()</code> starting at <a href="/C:/VISSION_ASSIST/server.py#L117">server.py:117</a>.</p>
+<h3>5. Event fan-out</h3>
+<p>Each loop iteration can emit:</p>
+<ul>
+<li><code>frame</code></li>
+<li><code>detections</code></li>
+<li><code>alert</code></li>
+<li><code>stats</code></li>
+<li><code>distance</code></li>
+<li><code>error</code></li>
+<li><code>status</code></li>
+</ul>
+<p>Events are added to the asyncio queue through <code>_push()</code> at <a href="/C:/VISSION_ASSIST/server.py#L109">server.py:109</a>.</p>
+<h3>6. Stop / disconnect</h3>
+<p>Stopping or disconnecting sets <code>_running = False</code>, stops voice, releases the camera, and emits <code>{&quot;type&quot;:&quot;status&quot;,&quot;running&quot;:false}</code> at <a href="/C:/VISSION_ASSIST/server.py#L89">server.py:89</a> and <a href="/C:/VISSION_ASSIST/server.py#L419">server.py:419</a>.</p>
+<h2>Data Contracts</h2>
+<h3>Client to server</h3>
+<p>Defined in the docstring at <a href="/C:/VISSION_ASSIST/server.py#L25">server.py:25</a>:</p>
+<ul>
+<li><code>start</code></li>
+<li><code>stop</code></li>
+<li><code>settings</code></li>
+<li><code>depth_overlay</code></li>
+<li><code>ask</code></li>
+</ul>
+<h3>Server to client</h3>
+<p>Defined in the docstring at <a href="/C:/VISSION_ASSIST/server.py#L14">server.py:14</a>:</p>
+<ul>
+<li><code>frame</code></li>
+<li><code>detections</code></li>
+<li><code>alert</code></li>
+<li><code>stats</code></li>
+<li><code>distance</code></li>
+<li><code>assistant</code></li>
+<li><code>error</code></li>
+<li><code>status</code></li>
+</ul>
+<h2>Detailed Walkthrough</h2>
+<h2>1. server.py</h2>
+<h3>What this file does</h3>
+<p>This file is both:</p>
+<ol>
+<li>The API server.</li>
+<li>The application orchestrator.</li>
+</ol>
+<p>It does not implement the detection or navigation algorithms itself. Instead, it wires together the modules in <code>src/</code>.</p>
+<h3>Line-by-line explanation</h3>
+<h4>Header and imports</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L1">server.py:1</a> starts a long module docstring that explains the server role and message format.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L14">server.py:14</a> documents outbound messages.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L25">server.py:25</a> documents inbound messages.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L42">server.py:42</a> imports standard library modules for async work, encoding, timing, and threading.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L47">server.py:47</a> builds the absolute <code>src/</code> path.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L48">server.py:48</a> injects <code>src/</code> into <code>sys.path</code> so local modules like <code>detection</code> and <code>navigation</code> can be imported directly.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L51">server.py:51</a> imports OpenCV, NumPy, and Torch.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L55">server.py:55</a> imports FastAPI and WebSocket classes.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L58">server.py:58</a> imports Uvicorn for running the HTTP server.</li>
+</ul>
+<h4>Pipeline class state</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L63">server.py:63</a> defines <code>Pipeline</code>, the core runtime controller.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L67">server.py:67</a> begins the constructor.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L68">server.py:68</a> stores the worker thread handle.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L69">server.py:69</a> tracks whether the loop should keep running.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L70">server.py:70</a> stores runtime config sent by the client.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L71">server.py:71</a> tracks whether depth overlay should be drawn in rendered frames.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L72">server.py:72</a> creates an asyncio queue used to move events from the worker thread to the WebSocket task.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L73">server.py:73</a> stores the owning event loop reference.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L74">server.py:74</a> holds the TTS engine instance.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L75">server.py:75</a> tracks the last alert timestamp for cooldown behavior.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L76">server.py:76</a> caches the most recent detections for LLM questions.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L77">server.py:77</a> caches the last sonar distance.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L78">server.py:78</a> records whether depth has successfully produced any map yet.</li>
+</ul>
+<h4>Pipeline control methods</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L80">server.py:80</a> defines <code>start()</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L81">server.py:81</a> prevents double-starting the pipeline.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L83">server.py:83</a> stores the new config.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L84">server.py:84</a> stores the main asyncio loop so thread-safe queue writes are possible.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L85">server.py:85</a> marks the pipeline as running.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L86">server.py:86</a> creates a daemon thread targeting <code>_run</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L87">server.py:87</a> starts the thread.</li>
+</ul>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L89">server.py:89</a> defines <code>stop()</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L90">server.py:90</a> tells the main loop to exit.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L91">server.py:91</a> clears cached detections.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L92">server.py:92</a> clears cached distance.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L93">server.py:93</a> resets depth state.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L94">server.py:94</a> checks whether voice exists.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L95">server.py:95</a> attempts to stop voice cleanly.</li>
+</ul>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L98">server.py:98</a> defines <code>update_settings()</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L99">server.py:99</a> merges partial config from the client into the current config.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L101">server.py:101</a> resets the cooldown so new settings apply immediately.</li>
+</ul>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L103">server.py:103</a> toggles depth overlay rendering.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L106">server.py:106</a> explicitly resets the alert timer.</li>
+</ul>
+<h4>Queue bridge</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L110">server.py:110</a> defines <code>_push()</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L111">server.py:111</a> ensures the main event loop still exists.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L112">server.py:112</a> uses <code>asyncio.run_coroutine_threadsafe(...)</code> because the worker thread cannot <code>await</code> directly.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L113">server.py:113</a> schedules <code>queue.put(event)</code> on the main loop.</li>
+</ul>
+<h4>Pipeline bootstrap inside <code>_run()</code></h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L117">server.py:117</a> begins the background pipeline.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L118">server.py:118</a> imports <code>ObjectDetector</code> lazily, so the server can import faster before the pipeline starts.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L119">server.py:119</a> imports <code>Navigator</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L120">server.py:120</a> imports voice engine and priority constants.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L121">server.py:121</a> imports <code>AlertSuppressor</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L123">server.py:123</a> chooses GPU if CUDA is available, otherwise CPU.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L124">server.py:124</a> builds a frontend-friendly device label string.</li>
+</ul>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L127">server.py:127</a> creates the voice engine.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L128">server.py:128</a> starts the voice worker thread.</li>
+</ul>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L131">server.py:131</a> reads the requested mode from config.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L132">server.py:132</a> maps mode to YOLO weights.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L133">server.py:133</a> resolves the model path.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L135">server.py:135</a> begins safe YOLO loading.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L136">server.py:136</a> creates <code>ObjectDetector</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L137">server.py:137</a> passes the current confidence threshold.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L138">server.py:138</a> forces detector device alignment with the pipeline.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L139">server.py:139</a> catches model load failure.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L140">server.py:140</a> sends the error to the client.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L141">server.py:141</a> stops voice because the pipeline cannot proceed.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L142">server.py:142</a> marks the pipeline as not running.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L143">server.py:143</a> exits the thread early.</li>
+</ul>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L145">server.py:145</a> creates the <code>Navigator</code>.</li>
+</ul>
+<h4>Optional depth and ultrasonic setup</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L148">server.py:148</a> initializes <code>depth_est</code> to <code>None</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L150">server.py:150</a> only enables MiDaS in upgraded mode.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L152">server.py:152</a> imports <code>DepthEstimator</code> lazily.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L153">server.py:153</a> creates the depth estimator with frame skipping.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L155">server.py:155</a> catches MiDaS failure and reports it without crashing the whole pipeline.</li>
+</ul>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L159">server.py:159</a> initializes the optional ultrasonic sensor reference.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L160">server.py:160</a> only tries sonar when enabled and a port exists.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L162">server.py:162</a> imports <code>UltrasonicSensor</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L163">server.py:163</a> constructs the sensor.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L167">server.py:167</a> starts reading from the sensor.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L168">server.py:168</a> treats sonar startup as optional by sending an error instead of aborting.</li>
+</ul>
+<h4>Camera and per-run state</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L172">server.py:172</a> opens camera index <code>0</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L173">server.py:173</a> fixes width to <code>640</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L174">server.py:174</a> fixes height to <code>480</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L175">server.py:175</a> validates that the camera opened successfully.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L176">server.py:176</a> notifies the frontend if camera access fails.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L177">server.py:177</a> stops voice on failure.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L181">server.py:181</a> resets alert timing for a fresh session.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L182">server.py:182</a> creates the duplicate-alert guard.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L183">server.py:183</a> scales repeat suppression based on <code>alert_delay</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L185">server.py:185</a> announces that processing has started.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L187">server.py:187</a> creates an FPS rolling buffer.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L188">server.py:188</a> saves the previous timestamp for FPS calculation.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L190">server.py:190</a> maps navigation urgencies to voice priorities.</li>
+</ul>
+<h4>Main frame loop</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L192">server.py:192</a> starts the processing loop.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L193">server.py:193</a> reads a frame from the camera.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L194">server.py:194</a> handles temporary capture failures.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L195">server.py:195</a> sleeps briefly to avoid a hot spin loop.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L198">server.py:198</a> captures the current time.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L199">server.py:199</a> computes instantaneous FPS and stores it in the rolling buffer.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L200">server.py:200</a> updates the previous timestamp.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L202">server.py:202</a> normalizes frame size before processing.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L205">server.py:205</a> updates depth or returns cached depth if the frame is skipped.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L206">server.py:206</a> exposes whether depth has ever become ready.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L209">server.py:209</a> applies live confidence changes to the detector.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L210">server.py:210</a> runs YOLO detection.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L211">server.py:211</a> caches detections for AI assistant queries.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L214">server.py:214</a> uses depth-aware analysis when depth exists.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L217">server.py:217</a> falls back to area-based analysis when depth is unavailable.</li>
+</ul>
+<h4>Sonar fusion logic</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L220">server.py:220</a> reads the ultrasonic distance if a sensor is active.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L221">server.py:221</a> caches it for the assistant.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L223">server.py:223</a> imports sonar thresholds.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L224">server.py:224</a> classifies the reading into <code>danger</code>, <code>warning</code>, or <code>safe</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L227">server.py:227</a> emits the distance event to the frontend.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L229">server.py:229</a> produces a hard-stop alert when sonar sees something very close and vision did not.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L233">server.py:233</a> enforces the alert cooldown.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L234">server.py:234</a> checks with <code>AlertSuppressor</code> before repeating the alert.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L237">server.py:237</a> speaks the message at critical priority.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L238">server.py:238</a> sends the same alert to the frontend.</li>
+</ul>
+<h4>Navigation alert logic</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L242">server.py:242</a> gets the current timestamp for alerting.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L244">server.py:244</a> requires actual advice from the navigator.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L245">server.py:245</a> applies the configured cooldown.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L246">server.py:246</a> to <a href="/C:/VISSION_ASSIST/server.py#L251">server.py:251</a> decide whether the alert should be emitted.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L253">server.py:253</a> checks whether voice is enabled.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L254">server.py:254</a> speaks the message using mapped priority.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L256">server.py:256</a> emits the alert JSON to the frontend.</li>
+</ul>
+<h4>Frame encoding and telemetry</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L260">server.py:260</a> renders overlays on top of the frame.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L263">server.py:263</a> JPEG-encodes the image.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L264">server.py:264</a> base64-encodes the bytes for JSON transport.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L265">server.py:265</a> pushes the <code>frame</code> event.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L268">server.py:268</a> to <a href="/C:/VISSION_ASSIST/server.py#L280">server.py:280</a> serialize detection summaries for the UI.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L283">server.py:283</a> to <a href="/C:/VISSION_ASSIST/server.py#L288">server.py:288</a> emit <code>stats</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L290">server.py:290</a> releases the camera.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L291">server.py:291</a> stops sonar.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L292">server.py:292</a> stops voice.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L293">server.py:293</a> sends a stopped status event.</li>
+</ul>
+<h4>Rendering layer</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L295">server.py:295</a> defines <code>_render()</code>, the final annotation step before streaming.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L299">server.py:299</a> overlays the MiDaS heatmap.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L304">server.py:304</a> loops through detections to draw bounding boxes.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L310">server.py:310</a> colors boxes by estimated distance when centimeters are available.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L315">server.py:315</a> otherwise colors boxes by relative depth.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L330">server.py:330</a> draws left/center/right guide lines.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L333">server.py:333</a> draws the sonar HUD when available.</li>
+</ul>
+<h4>FastAPI and WebSocket API</h4>
+<ul>
+<li><a href="/C:/VISSION_ASSIST/server.py#L344">server.py:344</a> creates the FastAPI app.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L345">server.py:345</a> creates one global <code>Pipeline</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L349">server.py:349</a> mounts the frontend as static files.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L351">server.py:351</a> defines the root route.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L356">server.py:356</a> defines the <code>/ws</code> WebSocket endpoint.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L360">server.py:360</a> resets the queue for the current client session.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L363">server.py:363</a> creates a sender coroutine that forwards pipeline events.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L377">server.py:377</a> receives incoming WebSocket JSON from the frontend.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L381">server.py:381</a> handles <code>start</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L385">server.py:385</a> handles <code>stop</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L388">server.py:388</a> handles <code>settings</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L393">server.py:393</a> handles <code>depth_overlay</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L396">server.py:396</a> handles <code>ask</code>.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L403">server.py:403</a> runs the LLM request in a worker thread so the event loop does not block.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L411">server.py:411</a> sends the assistant response back to the client.</li>
+<li><a href="/C:/VISSION_ASSIST/server.py#L422">server.py:422</a> stops the pipeline during cleanup.</li>
+</ul>
+<h2>End-to-End Data Flow</h2>
+<h3>Flow 1: live vision stream</h3>
+<ol>
+<li>The browser connects to <code>/ws</code> and sends a <code>start</code> message.</li>
+<li>The backend stores the config and starts the background pipeline thread.</li>
+<li>The pipeline opens the camera and reads frames continuously.</li>
+<li>Each frame is resized to a standard <code>640x480</code>.</li>
+<li>YOLO detects objects in the frame.</li>
+<li>If upgraded mode is enabled, MiDaS produces a relative depth map.</li>
+<li>The navigator combines detections, depth, and ranging to decide the most important obstacle.</li>
+<li>Alerts are filtered by cooldown and duplicate suppression.</li>
+<li>The annotated frame is JPEG-encoded and base64-encoded.</li>
+<li>The detection list, stats, alerts, and frame are pushed into the asyncio queue.</li>
+<li>The WebSocket sender task forwards those events to the frontend.</li>
+</ol>
+<h3>Flow 2: assistant question</h3>
+<ol>
+<li>The frontend sends <code>{&quot;type&quot;:&quot;ask&quot;,&quot;question&quot;:&quot;...&quot;}</code> over the same WebSocket.</li>
+<li>The backend snapshots recent detections, last sonar distance, and depth readiness.</li>
+<li><code>assistant_llm.py</code> converts that scene state into a safety-oriented prompt.</li>
+<li>Gemini is called over plain HTTP.</li>
+<li>The answer is sent back as <code>{&quot;type&quot;:&quot;assistant&quot;,&quot;answer&quot;:&quot;...&quot;}</code>.</li>
+<li>If voice is enabled, the same answer is spoken through <code>VoiceEngine</code>.</li>
+</ol>
+<h3>Flow 3: live settings update</h3>
+<ol>
+<li>The frontend sends <code>{&quot;type&quot;:&quot;settings&quot;, ... }</code>.</li>
+<li>The server merges those values into <code>Pipeline._config</code>.</li>
+<li>The detector immediately reads the latest confidence threshold on the next frame.</li>
+<li>Alert cooldown is reset so the user feels the new setting immediately.</li>
+</ol>
+<h2>API Reference</h2>
+<h3>WebSocket endpoint</h3>
+<ul>
+<li>Endpoint: <code>ws://&lt;host&gt;:8000/ws</code></li>
+<li>Transport: JSON text messages over WebSocket</li>
+<li>Primary direction: bidirectional event stream</li>
+</ul>
+<h3>Client -&gt; server messages</h3>
+<h4><code>start</code></h4>
+<pre><code class="language-json">
+{
+  &quot;type&quot;: &quot;start&quot;,
+  &quot;mode&quot;: &quot;basic&quot;,
+  &quot;confidence&quot;: 0.6,
+  &quot;alert_delay&quot;: 1.5,
+  &quot;voice_enabled&quot;: true,
+  &quot;ultrasonic_enabled&quot;: false,
+  &quot;ultrasonic_port&quot;: &quot;COM3&quot;,
+  &quot;ultrasonic_baud&quot;: 9600
+}
+</code></pre>
+<p>Purpose: starts the vision pipeline with the given runtime configuration.</p>
+<h4><code>stop</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;stop&quot;}
+</code></pre>
+<p>Purpose: stops the live pipeline and releases resources.</p>
+<h4><code>settings</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;settings&quot;,&quot;confidence&quot;:0.65,&quot;alert_delay&quot;:1.2}
+</code></pre>
+<p>Purpose: updates config live without recreating the whole backend process.</p>
+<h4><code>depth_overlay</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;depth_overlay&quot;,&quot;enabled&quot;:true}
+</code></pre>
+<p>Purpose: toggles rendering of the MiDaS heatmap on outgoing frames.</p>
+<h4><code>ask</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;ask&quot;,&quot;question&quot;:&quot;What is ahead?&quot;,&quot;api_key&quot;:&quot;&lt;gemini-key&gt;&quot;}
+</code></pre>
+<p>Purpose: asks the assistant for a scene-aware natural-language answer.</p>
+<h3>Server -&gt; client messages</h3>
+<h4><code>frame</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;frame&quot;,&quot;data&quot;:&quot;&lt;base64-jpeg&gt;&quot;}
+</code></pre>
+<p>Purpose: carries the latest annotated camera frame.</p>
+<h4><code>detections</code></h4>
+<pre><code class="language-json">
+{
+  &quot;type&quot;:&quot;detections&quot;,
+  &quot;data&quot;:[
+    {&quot;name&quot;:&quot;person&quot;,&quot;conf&quot;:0.92,&quot;depth&quot;:0.78,&quot;pos&quot;:&quot;left&quot;,&quot;area&quot;:52200,&quot;distance_cm&quot;:95.0}
+  ]
+}
+</code></pre>
+<p>Purpose: gives the frontend a compact summary of objects currently visible.</p>
+<h4><code>alert</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;alert&quot;,&quot;message&quot;:&quot;Warning! Person about 100 centimeters away on your left. Move right.&quot;,&quot;urgency&quot;:&quot;critical&quot;}
+</code></pre>
+<p>Purpose: communicates the primary safety message to the UI.</p>
+<h4><code>stats</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;stats&quot;,&quot;fps&quot;:18.3,&quot;device&quot;:&quot;GPU (CUDA)&quot;,&quot;depth_ready&quot;:true,&quot;mode&quot;:&quot;upgraded&quot;,&quot;sensor_on&quot;:false}
+</code></pre>
+<p>Purpose: operational telemetry for the UI.</p>
+<h4><code>distance</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;distance&quot;,&quot;cm&quot;:84.2,&quot;zone&quot;:&quot;warning&quot;}
+</code></pre>
+<p>Purpose: sonar-specific measurement event.</p>
+<h4><code>assistant</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;assistant&quot;,&quot;answer&quot;:&quot;There is a person about one meter ahead on your left.&quot;}
+</code></pre>
+<p>Purpose: delivers the LLM answer to the frontend.</p>
+<h4><code>status</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;status&quot;,&quot;running&quot;:true}
+</code></pre>
+<p>Purpose: indicates whether the pipeline is active.</p>
+<h4><code>error</code></h4>
+<pre><code class="language-json">
+{&quot;type&quot;:&quot;error&quot;,&quot;message&quot;:&quot;YOLO load failed: ...&quot;}
+</code></pre>
+<p>Purpose: surfaces runtime failures without necessarily crashing the whole server process.</p>
+<h2>Backend Modules</h2>
+<h2>2. detection.py</h2>
+<p><code>detection.py</code> wraps Ultralytics YOLO and converts raw model output into the project-friendly <code>Detection</code> dataclass. The dataclass in <a href="/C:/VISSION_ASSIST/src/detection.py#L18">src/detection.py:18</a> stores class name, confidence, box coordinates, and computed fields like <code>center_x</code>, <code>center_y</code>, and <code>area</code>. The detector class in <a href="/C:/VISSION_ASSIST/src/detection.py#L48">src/detection.py:48</a> lazily imports heavy ML dependencies so the server can import faster and avoid loading YOLO before the user actually starts the pipeline. <code>detect()</code> at <a href="/C:/VISSION_ASSIST/src/detection.py#L82">src/detection.py:82</a> runs the model, filters by confidence, and returns normalized <code>Detection</code> objects.</p>
+<h2>3. navigation.py</h2>
+<p><code>navigation.py</code> is the decision layer. It decides which object matters most, where it is, how urgent it is, and what message should be spoken. In upgraded mode, <code>analyse()</code> at <a href="/C:/VISSION_ASSIST/src/navigation.py#L79">src/navigation.py:79</a> reads both detections and MiDaS depth. It computes adaptive percentiles from the scene, samples depth around each object&#x27;s center, estimates distance if possible, and then produces one <code>NavigationAdvice</code>. In basic mode, <code>analyse_by_area()</code> at <a href="/C:/VISSION_ASSIST/src/navigation.py#L147">src/navigation.py:147</a> falls back to area and class priors. This module is the heart of the obstacle-prioritization logic.</p>
+<h2>4. ranging.py</h2>
+<p><code>ranging.py</code> turns object size into approximate centimeters. <code>DistanceEstimator</code> at <a href="/C:/VISSION_ASSIST/src/ranging.py#L57">src/ranging.py:57</a> uses assumed object dimensions plus camera field of view to estimate distance from bounding-box width or height. This is not true metric depth, but it is good enough to sort urgency. <code>DistanceSmoother</code> at <a href="/C:/VISSION_ASSIST/src/ranging.py#L148">src/ranging.py:148</a> dampens frame-to-frame jumps so voice alerts do not oscillate.</p>
+<h2>5. depth.py</h2>
+<p><code>depth.py</code> wraps MiDaS for monocular relative depth estimation. <code>DepthEstimator</code> at <a href="/C:/VISSION_ASSIST/src/depth.py#L30">src/depth.py:30</a> chooses CPU or GPU, loads a fallback chain of models, and computes depth only every <code>frame_skip</code> frames. The output is normalized disparity, so higher values mean closer objects. This is why the heatmap and navigation logic interpret bright/hot regions as near obstacles.</p>
+<h2>6. voice.py</h2>
+<p><code>voice.py</code> protects the system from speech overload. <code>VoiceEngine</code> at <a href="/C:/VISSION_ASSIST/src/voice.py#L43">src/voice.py:43</a> keeps a bounded priority queue, deduplicates repeated speech, and lets critical messages preempt lower-priority ones. This is essential because the backend can generate alerts faster than a TTS engine can speak them.</p>
+<h2>7. alerts.py</h2>
+<p><code>alerts.py</code> decides whether an alert is worth repeating. <code>AlertSuppressor</code> at <a href="/C:/VISSION_ASSIST/src/alerts.py#L18">src/alerts.py:18</a> compares the new alert with the previous one, watches urgency changes, checks how much the distance changed, and blocks noisy repeats for a minimum interval.</p>
+<h2>8. assistant_llm.py</h2>
+<p><code>assistant_llm.py</code> integrates the assistant. It builds a prompt from scene state, recent detections, and sonar distance, then calls Gemini through plain HTTP. It does not require a heavyweight SDK, which keeps the backend easier to understand and deploy.</p>
+<h2>9. speech_input.py</h2>
+<p><code>speech_input.py</code> is a desktop helper for capturing spoken user questions through Windows PowerShell and <code>System.Speech</code>. It is not part of the WebSocket pipeline, but it supports the overall backend capability for voice interaction.</p>
+<h2>Backend Tech Stack And Why It Is Used</h2>
+<h3>FastAPI</h3>
+<p>Used in <a href="/C:/VISSION_ASSIST/server.py">server.py</a> for the HTTP server and WebSocket endpoint. It is a strong fit because:</p>
+<ul>
+<li>it gives async networking support out of the box,</li>
+<li>WebSocket support is simple,</li>
+<li>the code stays compact,</li>
+<li>it is easy to serve both API and static frontend content from one process.</li>
+</ul>
+<h3>Uvicorn</h3>
+<p>Used to run the ASGI app. It is lightweight, fast, and the default operational partner for FastAPI.</p>
+<h3>WebSocket</h3>
+<p>Used instead of plain REST polling because the frontend needs a continuous stream of frames, detections, stats, and alerts. This backend is event-driven, so WebSocket is the natural transport.</p>
+<h3>OpenCV</h3>
+<p>Used for camera capture, frame resizing, drawing overlays, JPEG encoding, and color-map visualization. It is the practical computer-vision utility layer around the ML models.</p>
+<h3>PyTorch</h3>
+<p>Used because both YOLO and MiDaS depend on Torch in this project. It also provides device management for CPU/GPU and tensor operations for inference.</p>
+<h3>Ultralytics YOLO</h3>
+<p>Used for object detection because it gives fast pretrained detection with minimal wrapper code. The backend needs class labels and bounding boxes in real time, and YOLO is doing that job here.</p>
+<h3>MiDaS</h3>
+<p>Used for relative depth estimation from a single camera. Without MiDaS, the backend knows only what object is present, not which visible object is closest in the scene. MiDaS improves prioritization.</p>
+<h3>pyttsx3</h3>
+<p>Used for offline text-to-speech. That matters here because safety guidance should still work locally even without internet access.</p>
+<h3>Gemini HTTP API</h3>
+<p>Used for scene-aware assistant answers. The project uses plain HTTP instead of a large SDK so the integration stays readable and dependency-light.</p>
+<h3>PowerShell System.Speech</h3>
+<p>Used on Windows for speech-to-text capture without requiring a separate cloud STT provider.</p>
+<h2>Concurrency Model</h2>
+<p>The backend uses three concurrency layers:</p>
+<ol>
+<li>FastAPI&#x27;s asyncio event loop for network traffic.</li>
+<li>One background thread for the vision pipeline.</li>
+<li>Additional short-lived threads for voice output and blocking assistant work.</li>
+</ol>
+<p>This design was likely chosen because the camera and ML pipeline are long-running and blocking, while the WebSocket server must stay responsive. The background thread isolates the vision loop from the async server.</p>
+<h2>State Management</h2>
+<p>Important runtime state lives in <code>Pipeline</code>:</p>
+<ul>
+<li><code>_running</code>: whether the loop should continue.</li>
+<li><code>_config</code>: live runtime configuration from the client.</li>
+<li><code>_last_alert</code>: cooldown marker.</li>
+<li><code>_last_detections</code>: cached for assistant context.</li>
+<li><code>_last_distance_cm</code>: cached sonar value.</li>
+<li><code>_depth_ready</code>: whether MiDaS has successfully produced at least one map.</li>
+</ul>
+<p>The backend is stateful. It is not a stateless request-per-response API server.</p>
+<h2>Operational Notes</h2>
+<h3>Startup cost</h3>
+<p>Model loading happens when the pipeline starts, not at process boot. This keeps initial import lighter, but it makes the first <code>start</code> slower.</p>
+<h3>Single-client orientation</h3>
+<p>The current design creates one global <code>Pipeline</code> and swaps its queue per WebSocket session. That means this backend is best understood as a single-user live runtime, not a multi-tenant backend service.</p>
+<h3>Failure behavior</h3>
+<p>The backend often degrades gracefully:</p>
+<ul>
+<li>if MiDaS fails, it can continue without depth,</li>
+<li>if the ultrasonic sensor fails, vision can still run,</li>
+<li>if the assistant fails, the main detection loop still works.</li>
+</ul>
+<h2>Risks And Gaps</h2>
+<h3>Missing ultrasonic module</h3>
+<p><a href="/C:/VISSION_ASSIST/server.py#L162">server.py:162</a> imports <code>ultrasonic</code>, but there is no matching file in the current workspace snapshot. That makes ultrasonic support incomplete here.</p>
+<h3>Case-sensitive deployment risk</h3>
+<p><a href="/C:/VISSION_ASSIST/server.py#L348">server.py:348</a> points to <code>frontend</code>, while the folder in this workspace is <code>FRONTEND</code>. Windows usually tolerates that, Linux usually does not.</p>
+<h3>Heavy runtime responsibilities in one file</h3>
+<p><code>server.py</code> currently owns transport, pipeline orchestration, rendering, and session state. It works, but for a larger production backend you would usually split transport, service orchestration, and rendering into separate modules.</p>
+<h2>Suggested Reading Order</h2>
+<ol>
+<li><a href="/C:/VISSION_ASSIST/server.py">server.py</a></li>
+<li><a href="/C:/VISSION_ASSIST/src/detection.py">src/detection.py</a></li>
+<li><a href="/C:/VISSION_ASSIST/src/navigation.py">src/navigation.py</a></li>
+<li><a href="/C:/VISSION_ASSIST/src/ranging.py">src/ranging.py</a></li>
+<li><a href="/C:/VISSION_ASSIST/src/depth.py">src/depth.py</a></li>
+<li><a href="/C:/VISSION_ASSIST/src/voice.py">src/voice.py</a></li>
+<li><a href="/C:/VISSION_ASSIST/src/alerts.py">src/alerts.py</a></li>
+<li><a href="/C:/VISSION_ASSIST/src/assistant_llm.py">src/assistant_llm.py</a></li>
+</ol>
+<h2>Final Summary</h2>
+<p>This backend is a real-time, stateful, event-driven Python system. FastAPI and WebSocket provide the transport. A background pipeline thread handles camera frames and model inference. YOLO detects objects, MiDaS estimates relative closeness, ranging approximates centimeters, navigation decides what matters, alerts prevents repetition, voice speaks the result, and the assistant explains the scene in natural language. The design is practical for a live assistive-vision application because it prioritizes responsiveness, local inference, graceful fallback, and continuous streaming over purely stateless API patterns.</p>
+</body>
+</html>
