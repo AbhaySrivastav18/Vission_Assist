@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AI Vision Assist
 
 Real-time obstacle detection and voice guidance system for visually impaired users.
@@ -171,3 +172,7 @@ Edit the `Configuration` block at the top of either main script:
 - Mobile application interface
 - Spatial / binaural audio guidance
 - Path planning and route suggestion
+=======
+# Vission_Assist
+An AI-powered assistive system for visually impaired users that uses YOLOv8 for real-time object detection and MiDaS for depth estimation. Obstacles are classified into Critical, Warning, and Info levels with priority-based TTS voice alerts. Built with FastAPI, WebSocket, PyQt5, and React for a live dashboard with depth heatmap overlay.
+>>>>>>> 28ad61a7bf0ec9c8380c5f1aca341abb8411f516
